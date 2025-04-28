@@ -1,0 +1,17 @@
+{
+  "name": "knob-midi-controller-fidget-toy",
+  "version": "1.0.0",
+  "type" : "module",
+  "description": "",
+  "main": "index.ts",
+  "scripts": {
+    "start": "node index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "midi": "^2.0.0"
+  }
+}
