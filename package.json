@@ -1,7 +1,7 @@
 {
   "name": "knob-midi-controller-fidget-toy",
   "version": "1.0.0",
-  "type" : "module",
+  "type": "module",
   "description": "",
   "main": "index.ts",
   "scripts": {
@@ -12,6 +12,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@julusian/midi": "^3.6.1",
     "midi": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/midi": "^2.0.3"
   }
 }
