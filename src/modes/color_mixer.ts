@@ -3,30 +3,50 @@ import { type FidgetModeInterface, type FidgetModeName, setLed, clearLeds } from
 import { animationFunctions, type AnimationFunction } from "../animations.ts"
 
 // --- Configuration ---
-const RED_KNOB = 0
-const GREEN_KNOB = 1
-const BLUE_KNOB = 2
-const DISPLAY_KNOB = 3
-const AFFECTED_KNOBS = [RED_KNOB, GREEN_KNOB, BLUE_KNOB, DISPLAY_KNOB]
+const SELECTOR_KNOBS = [0, 1, 2] as const
+const COLOR_SELECTOR_KNOB_R = 0
+const COLOR_SELECTOR_KNOB_G = 1
+const COLOR_SELECTOR_KNOB_B = 2
+
+const ANIM_SELECTOR_KNOB_EASE = 0 // Knob 0 selects Easing
+const ANIM_SELECTOR_KNOB_STRATEGY = 1 // Knob 1 selects Color Transition Strategy
+const ANIM_SELECTOR_KNOB_SPEED = 2 // Knob 2 selects Speed/Duration
+
+const TOGGLE_KNOB = 3
+const CONTROL_KNOBS = [COLOR_SELECTOR_KNOB_R, COLOR_SELECTOR_KNOB_G, COLOR_SELECTOR_KNOB_B, TOGGLE_KNOB] as const
+
 const ALL_KNOBS = Array.from({ length: 16 }, (_, i) => i)
+const MAX_LED_VALUE = 127
+const ANIMATION_INTERVAL = 50 // ms
+const DEFAULT_ANIMATION_DURATION = 2000 // ms
+const MIN_ANIMATION_DURATION = 500 // ms
+const MAX_ANIMATION_DURATION = 10000 // ms
+// REMOVED: const ANIMATION_PATTERNS
+
+// Color Transition Strategies
+const COLOR_TRANSITION_STRATEGIES = ["originalToMax", "cycleHue"] as const
+type ColorTransitionStrategy = (typeof COLOR_TRANSITION_STRATEGIES)[number]
 
 // --- State ---
 let redValue = 0
 let greenValue = 0
 let blueValue = 0
-let mixedColorValue = 0
-let isSampling = false
-let sampledColor = 0
-// Track which knobs have which colors
-const knobColors = new Map<number, number>()
-// Track flashing timers
-let displayKnobFlashTimers: (NodeJS.Timeout | number)[] = []
-// Track active animations: Map<colorValue, { animIndex: number, startTime: number, duration: number, originalColor: number }>
-const activeAnimations = new Map<number, { animIndex: number; startTime: number; duration: number; originalColor: number }>()
+let mixedColorValue = 0 // Always represents the R,G,B state
+let isAnimationConfigModeActive = false
+
+// Stores the specific animation config per color value
+interface ColorAnimConfig {
+  easingIndex: number
+  // REMOVED: patternIndex: number;
+  strategyIndex: number // NEW
+  duration: number
+}
+const colorAnimationConfig = new Map<number, ColorAnimConfig>()
+
+const knobColors = new Map<number, number>() // Map<knobIndex, appliedColorValue>
+// Map<appliedColorValue, animState>
+const activeAnimations = new Map<number, { animIndex: number; strategyIndex: number; startTime: number; duration: number /* removed knobOffsets */ }>()
 let animationIntervalId: NodeJS.Timeout | number | null = null
-const ANIMATION_INTERVAL = 50 // ms
-const ANIMATION_DURATION = 2000 // ms
-const MAX_LED_VALUE = 127
 
 // --- Animation Functions ---
 // REMOVED - Now in animations.ts
@@ -47,40 +67,106 @@ function rgbToMidiColor(r: number, g: number, b: number): number {
   return Math.floor(avg)
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t
+}
+
+// Add HSL helpers (basic placeholders - replace with a proper library if needed)
+function midiValueToHSL(value: number): { h: number; s: number; l: number } {
+  // VERY basic mapping - assumes MIDI value represents hue directly scaled
+  const h = (value / MAX_LED_VALUE) * 360
+  const s = 1.0 // Full saturation
+  const l = 0.5 // Medium lightness
+  return { h, s, l }
+}
+
+function hslToMidiValue(h: number, s: number, l: number): number {
+  // VERY basic mapping - inverse of above, ignoring s, l for now
+  let value = Math.round((h / 360) * MAX_LED_VALUE) % (MAX_LED_VALUE + 1)
+  return clamp(value, 0, MAX_LED_VALUE)
+}
+
 // --- Mode Definition ---
 export class ColorMixerMode implements FidgetModeInterface {
   activate(output: Output): void {
-    console.log("🎨 Activating Color Mixer Mode")
-    this.deactivate(output) // Clear previous state first
+    console.log("🎨 Activating Color Mixer Mode (Sync Anim + Strategies)")
+    this.deactivate(output)
 
-    // Initialize state
     redValue = 0
     greenValue = 0
     blueValue = 0
-    isSampling = false
-    sampledColor = 0
+    mixedColorValue = rgbToMidiColor(0, 0, 0)
+    isAnimationConfigModeActive = false
+    colorAnimationConfig.clear()
     knobColors.clear()
     activeAnimations.clear()
-    // Clear any pending flash timers
-    displayKnobFlashTimers.forEach(clearTimeout)
-    displayKnobFlashTimers = []
 
     clearLeds(output, ALL_KNOBS)
+    this.updateSelectorKnobLEDs(output)
+    this.updateToggleKnobLED(output)
 
-    // Set initial LED colors for control knobs
-    setLed(output, RED_KNOB, 4) // Redish
-    setLed(output, GREEN_KNOB, 36) // Greenish
-    setLed(output, BLUE_KNOB, 70) // Bluish
-    this.updateDisplayKnob(output) // Set display knob initial color
-    console.log("  Knobs 0,1,2 = R,G,B | Knob 3 = Mixed | Press 3 to Sample | Press sampled knob to cycle animation")
+    console.log("  Knobs 0-2: Color/Anim(Ease,Strategy,Speed) | Knob 3: Toggle | Click 4-15 to apply/animate | Press K0/K2 to Stop Anim")
   }
 
-  private updateDisplayKnob(output: Output) {
-    mixedColorValue = rgbToMidiColor(redValue, greenValue, blueValue)
-    // Avoid overwriting if display knob is part of an animation
-    if (this.isKnobAnimated(DISPLAY_KNOB)) return
+  deactivate(output: Output): void {
+    console.log("🎨 Deactivated Color Mixer mode")
+    clearLeds(output, ALL_KNOBS)
+    // Reset state explicitly
+    redValue = 0
+    greenValue = 0
+    blueValue = 0
+    mixedColorValue = 0
+    isAnimationConfigModeActive = false
+    colorAnimationConfig.clear()
+    knobColors.clear()
+    activeAnimations.clear()
+    if (animationIntervalId) {
+      clearInterval(animationIntervalId as number)
+      animationIntervalId = null
+    }
+  }
 
-    setLed(output, DISPLAY_KNOB, mixedColorValue)
+  // Helper to get or create default animation config for a color
+  private getOrCreateColorAnimConfig(colorKey: number): ColorAnimConfig {
+    if (!colorAnimationConfig.has(colorKey)) {
+      colorAnimationConfig.set(colorKey, {
+        easingIndex: 0,
+        strategyIndex: 0, // Default strategy
+        duration: DEFAULT_ANIMATION_DURATION,
+      })
+    }
+    return colorAnimationConfig.get(colorKey)!
+  }
+
+  // Helper to update LEDs for Selector Knobs (0, 1, 2)
+  private updateSelectorKnobLEDs(output: Output): void {
+    if (isAnimationConfigModeActive) {
+      const config = this.getOrCreateColorAnimConfig(mixedColorValue)
+      setLed(output, ANIM_SELECTOR_KNOB_EASE, clamp(Math.floor(MAX_LED_VALUE * (config.easingIndex / animationFunctions.length)), 0, MAX_LED_VALUE))
+      setLed(output, ANIM_SELECTOR_KNOB_STRATEGY, clamp(Math.floor(MAX_LED_VALUE * (config.strategyIndex / COLOR_TRANSITION_STRATEGIES.length)), 0, MAX_LED_VALUE))
+      const durationProgress = clamp((config.duration - MIN_ANIMATION_DURATION) / (MAX_ANIMATION_DURATION - MIN_ANIMATION_DURATION), 0, 1)
+      setLed(output, ANIM_SELECTOR_KNOB_SPEED, clamp(Math.floor(MAX_LED_VALUE * (1 - durationProgress)), 0, MAX_LED_VALUE))
+    } else {
+      // Show color selectors
+      setLed(output, COLOR_SELECTOR_KNOB_R, 4 + Math.floor(redValue / (MAX_LED_VALUE / 10)))
+      setLed(output, COLOR_SELECTOR_KNOB_G, 36 + Math.floor(greenValue / (MAX_LED_VALUE / 10)))
+      setLed(output, COLOR_SELECTOR_KNOB_B, 70 + Math.floor(blueValue / (MAX_LED_VALUE / 10)))
+    }
+  }
+
+  // Helper to update the Toggle Knob (3) LED based on mode
+  private updateToggleKnobLED(output: Output): void {
+    if (isAnimationConfigModeActive) {
+      setLed(output, TOGGLE_KNOB, 120) // Config mode indicator (White)
+    } else {
+      // Don't update if the knob itself is animating (unlikely but possible)
+      if (this.isKnobAnimated(TOGGLE_KNOB)) return
+      setLed(output, TOGGLE_KNOB, mixedColorValue)
+    }
   }
 
   // Helper to check if a specific knob is currently part of an active animation
@@ -98,7 +184,7 @@ export class ColorMixerMode implements FidgetModeInterface {
     // Restore original color LED value to all knobs in the group
     knobColors.forEach((knobColor, knobIndex) => {
       if (knobColor === colorKey) {
-        setLed(output, knobIndex, anim.originalColor)
+        setLed(output, knobIndex, colorKey) // Restore the original sampled color
       }
     })
     console.log(`🎨 Animation stopped for color group ${colorKey}`)
@@ -112,33 +198,51 @@ export class ColorMixerMode implements FidgetModeInterface {
     this.stopAnimationForColor(output, colorKey)
   }
 
+  // --- Animation Loop Logic ---
   private animationLoop(output: Output): void {
     const now = Date.now()
     let hasActiveAnimations = false
 
     activeAnimations.forEach((anim, colorKey) => {
       hasActiveAnimations = true
-      const elapsedTime = now - anim.startTime
+      const strategyName = COLOR_TRANSITION_STRATEGIES[anim.strategyIndex]
+      const easeFunc = animationFunctions[anim.animIndex]
 
-      // Calculate animation progress (looping)
-      const animFunc = animationFunctions[anim.animIndex]
-      if (!animFunc) {
-        console.warn(`Invalid animation index ${anim.animIndex} for color ${colorKey}`)
-        activeAnimations.delete(colorKey) // Remove invalid animation
-        return // Continue to next animation
+      if (!easeFunc) {
+        console.warn(`Invalid anim index ${anim.animIndex} for color ${colorKey}`)
+        activeAnimations.delete(colorKey)
+        return
       }
 
-      // Use modulo to make time wrap around the duration for looping
+      // Base time progress (0-1), looping
+      const elapsedTime = now - anim.startTime
       const timeWithinLoop = elapsedTime % anim.duration
-      const tProgress = timeWithinLoop / anim.duration // Progress within the current loop (0.0 to 1.0)
+      const tProgressBase = timeWithinLoop / anim.duration
 
-      const progressFactor = animFunc(tProgress, 0, anim.duration) // Offset is 0 for now
+      // Apply easing function to the time progress
+      const easedProgress = easeFunc(tProgressBase, 0, anim.duration)
 
-      // Animate between originalColor and MAX_LED_VALUE
-      const currentValue = Math.round(anim.originalColor + (MAX_LED_VALUE - anim.originalColor) * progressFactor)
-      const finalValue = Math.max(0, Math.min(MAX_LED_VALUE, currentValue)) // Clamp value
+      // Calculate target color based on strategy
+      let targetColorValue = colorKey // Default to original color
 
-      // Update LEDs for all knobs currently mapped to this originalColor group
+      switch (strategyName) {
+        case "originalToMax":
+          // Interpolate from original color (colorKey) to MAX_LED_VALUE
+          targetColorValue = lerp(colorKey, MAX_LED_VALUE, easedProgress)
+          break
+        case "cycleHue":
+          // Get original HSL, cycle Hue based on progress, convert back
+          const originalHSL = midiValueToHSL(colorKey)
+          // Cycle hue by 360 degrees over the animation duration
+          const currentHue = (originalHSL.h + easedProgress * 360) % 360
+          targetColorValue = hslToMidiValue(currentHue, originalHSL.s, originalHSL.l)
+          break
+        // Add more strategies here
+      }
+
+      const finalValue = clamp(Math.round(targetColorValue), 0, MAX_LED_VALUE)
+
+      // Update ALL knobs in this color group to the SAME calculated color
       knobColors.forEach((knobColor, knobIndex) => {
         if (knobColor === colorKey) {
           setLed(output, knobIndex, finalValue)
@@ -146,7 +250,7 @@ export class ColorMixerMode implements FidgetModeInterface {
       })
     })
 
-    // Stop the interval if no more animations are active
+    // Stop interval if no animations are active
     if (!hasActiveAnimations && animationIntervalId) {
       clearInterval(animationIntervalId as number)
       animationIntervalId = null
@@ -161,160 +265,160 @@ export class ColorMixerMode implements FidgetModeInterface {
   }
 
   handleKnobTurn(output: Output, control: number, value: number): boolean {
-    let needsDisplayUpdate = false
+    // --- Config Mode Knob Turns ---
+    if (isAnimationConfigModeActive) {
+      const config = this.getOrCreateColorAnimConfig(mixedColorValue)
 
-    // --- Check for exiting sampling mode ---
-    if (isSampling && (control === RED_KNOB || control === GREEN_KNOB || control === BLUE_KNOB)) {
-      isSampling = false
-      displayKnobFlashTimers.forEach(clearTimeout)
-      displayKnobFlashTimers = []
-      // No need to restore display knob LED here, as updateDisplayKnob will be called anyway
-      console.log("🎨 Exited painting mode due to RGB knob turn.")
+      switch (control) {
+        case ANIM_SELECTOR_KNOB_EASE: // Knob 0
+          config.easingIndex = value % animationFunctions.length
+          const easeName = animationFunctions[config.easingIndex]?.name || `Index ${config.easingIndex}`
+          console.log(`🔧 Config (${mixedColorValue}): Set Easing: ${easeName}`)
+          // Update active animation immediately if running
+          if (activeAnimations.has(mixedColorValue)) {
+            activeAnimations.get(mixedColorValue)!.animIndex = config.easingIndex
+            // Maybe restart time? activeAnimations.get(mixedColorValue)!.startTime = Date.now();
+          }
+          break
+
+        case ANIM_SELECTOR_KNOB_STRATEGY: // Knob 1
+          config.strategyIndex = value % COLOR_TRANSITION_STRATEGIES.length
+          const strategyName = COLOR_TRANSITION_STRATEGIES[config.strategyIndex]
+          console.log(`🔧 Config (${mixedColorValue}): Set Strategy: ${strategyName}`)
+          // Update active animation immediately
+          if (activeAnimations.has(mixedColorValue)) {
+            activeAnimations.get(mixedColorValue)!.strategyIndex = config.strategyIndex
+            activeAnimations.get(mixedColorValue)!.startTime = Date.now() // Restart time for new strategy
+          }
+          break
+
+        case ANIM_SELECTOR_KNOB_SPEED: // Knob 2
+          const progress = value / MAX_LED_VALUE
+          config.duration = clamp(Math.round(lerp(MIN_ANIMATION_DURATION, MAX_ANIMATION_DURATION, progress)), MIN_ANIMATION_DURATION, MAX_ANIMATION_DURATION)
+          console.log(`🔧 Config (${mixedColorValue}): Set Duration: ${config.duration}ms`)
+          // Update active animation immediately
+          if (activeAnimations.has(mixedColorValue)) {
+            activeAnimations.get(mixedColorValue)!.duration = config.duration
+            // Don't restart time for duration change
+          }
+          break
+        default:
+          return true // Ignore other knobs in config mode
+      }
+      this.updateSelectorKnobLEDs(output) // Update LEDs to reflect change
+      return true // Handled config change
     }
-    // --- End check ---
+    // --- End Config Mode Knob Turns ---
 
+    // --- Normal Mode Knob Turns ---
+    let needsDisplayUpdate = false
     switch (control) {
-      case RED_KNOB:
-        redValue = value
-        setLed(output, RED_KNOB, 4 + Math.floor(value / (MAX_LED_VALUE / 10)))
-        needsDisplayUpdate = true
+      case COLOR_SELECTOR_KNOB_R:
+      case COLOR_SELECTOR_KNOB_G:
+      case COLOR_SELECTOR_KNOB_B:
+        // Update RGB values
+        if (control === COLOR_SELECTOR_KNOB_R) redValue = value
+        else if (control === COLOR_SELECTOR_KNOB_G) greenValue = value
+        else blueValue = value
+        // Update the actual mixed color value used for applying
+        mixedColorValue = rgbToMidiColor(redValue, greenValue, blueValue)
+        needsDisplayUpdate = true // Need to update LEDs
         break
-      case GREEN_KNOB:
-        greenValue = value
-        setLed(output, GREEN_KNOB, 36 + Math.floor(value / (MAX_LED_VALUE / 10)))
-        needsDisplayUpdate = true
-        break
-      case BLUE_KNOB:
-        blueValue = value
-        setLed(output, BLUE_KNOB, 70 + Math.floor(value / (MAX_LED_VALUE / 10)))
-        needsDisplayUpdate = true
-        break
+
       default:
-        // Check if it's a knob with a sampled color
+        // Handle turning knobs 4-15 with assigned colors (changes group color)
+        if (CONTROL_KNOBS.includes(control as any)) return false // Ignore turns on control knobs in normal mode
+
         const colorKey = knobColors.get(control)
         if (colorKey !== undefined) {
-          // Stop animation first (if any)
-          this.stopAnimationForColor(output, colorKey)
-
-          const newColor = value // Use raw value for new color
-          // Update all knobs that shared the original color
+          this.stopAnimationForColor(output, colorKey) // Stop animation first
+          const newColor = value // Use raw value for new group color
+          console.log(`🎨 Knob ${control} turned. Updating color group ${colorKey} to new color ${newColor}`)
           knobColors.forEach((knobColor, knobIndex) => {
             if (knobColor === colorKey) {
               setLed(output, knobIndex, newColor)
               knobColors.set(knobIndex, newColor) // Update map to new color group
             }
           })
-          // Since the color group changed, the old animation cycle index is irrelevant.
+          // A new color group was created, remove any old animation state
+          activeAnimations.delete(colorKey)
           return true // Handled
         }
-        // Not an RGB knob or a sampled knob
-        return false // Did not handle
+        return false // Did not handle turn for unassigned non-control knob
     }
 
-    // If R, G, or B changed, update the display
+    // Update LEDs if RGB changed
     if (needsDisplayUpdate) {
-      this.updateDisplayKnob(output)
-      return true // Handled
+      this.updateSelectorKnobLEDs(output)
+      this.updateToggleKnobLED(output)
+      return true // Handled RGB update
     }
 
-    return false // Should not be reached
+    return false
   }
 
   handleButtonPress(output: Output, control: number): boolean {
-    // --- 1. Handle Painting / Sampling Exit ---
-    if (isSampling) {
-      if (control === DISPLAY_KNOB) {
-        // Pressing display knob again exits sampling mode
-        isSampling = false
-        displayKnobFlashTimers.forEach(clearTimeout)
-        displayKnobFlashTimers = []
-        setLed(output, DISPLAY_KNOB, mixedColorValue) // Restore display knob
-        console.log("🎨 Exited painting mode.")
-        return true // Handled
+    // --- 1. Toggle Animation Config Mode ---
+    if (control === TOGGLE_KNOB) {
+      isAnimationConfigModeActive = !isAnimationConfigModeActive
+      if (isAnimationConfigModeActive) {
+        console.log("🔧 Entered Animation Config Mode.")
       } else {
-        // Apply color to the pressed knob AND stay in sampling mode
-        console.log(`🎨 Painting color ${sampledColor} onto Knob ${control}`)
-        this.stopAnimationForKnob(output, control) // Stop existing animation if any
-        setLed(output, control, sampledColor)
-        knobColors.set(control, sampledColor) // Assign knob to this color group
-        return true // Handled press event (painted knob)
+        console.log("🎨 Exited Animation Config Mode. Returned to Color Mixing.")
       }
+      this.updateSelectorKnobLEDs(output)
+      this.updateToggleKnobLED(output)
+      return true // Handled config toggle
     }
 
-    // --- 2. Handle Entering Sampling Mode ---
-    if (control === DISPLAY_KNOB) {
-      isSampling = true
-      sampledColor = mixedColorValue
-      console.log(`🎨 Entered painting mode (Color: ${sampledColor}). Click knobs to paint, Display knob to exit.`)
-      // Flash the display knob
-      displayKnobFlashTimers.forEach(clearTimeout) // Clear previous just in case
-      displayKnobFlashTimers = []
-      setLed(output, DISPLAY_KNOB, MAX_LED_VALUE) // Flash High
-      displayKnobFlashTimers.push(setTimeout(() => setLed(output, DISPLAY_KNOB, 0), 150))
-      displayKnobFlashTimers.push(setTimeout(() => setLed(output, DISPLAY_KNOB, MAX_LED_VALUE), 300))
-      displayKnobFlashTimers.push(
-        setTimeout(() => {
-          // Restore flashing knob to indicate ongoing painting mode
-          if (isSampling) setLed(output, DISPLAY_KNOB, MAX_LED_VALUE) // Keep it lit/flashing? Or use sampledColor? Let's use MAX for now.
-        }, 450)
-      )
-      return true // Handled press event (enter sampling)
-    }
-
-    // --- 3. Handle Animation Cycling / Stopping (Only if NOT sampling) ---
-    // This part is only reached if isSampling is false
-    const colorKey = knobColors.get(control)
-    if (colorKey !== undefined) {
-      const currentAnimation = activeAnimations.get(colorKey)
-
-      if (currentAnimation) {
-        // Animation is currently running for this group, cycle or stop
-        const currentAnimIndex = currentAnimation.animIndex
-        const nextAnimIndex = currentAnimIndex + 1
-
-        if (nextAnimIndex < animationFunctions.length) {
-          // Cycle to the next animation
-          const newAnimFunc = animationFunctions[nextAnimIndex]
-          const newAnimName = newAnimFunc?.name || `Index ${nextAnimIndex}`
-          console.log(`🎨 Cycling animation to '${newAnimName}' (Index ${nextAnimIndex}) for color group ${colorKey}`)
-
-          activeAnimations.set(colorKey, {
-            ...currentAnimation, // Keep originalColor, duration
-            animIndex: nextAnimIndex,
-            startTime: Date.now(), // Restart timer for the new animation
-          })
-          // Ensure loop is running (it should be, but doesn't hurt)
-          this.startAnimationLoop(output)
-        } else {
-          // Cycled through all animations, now stop
-          console.log(`🎨 Cycled through all animations. Stopping for color group ${colorKey}.`)
-          this.stopAnimationForColor(output, colorKey)
-          // The animation loop will stop itself if no others are active
-        }
-      } else {
-        // Animation is NOT running, start the first one (index 0)
-        const firstAnimFunc = animationFunctions[0]
-        if (!firstAnimFunc) {
-          console.warn("No animations defined!")
-          return true // Handled press, nothing to do
-        }
-        const firstAnimName = firstAnimFunc.name || `Index 0`
-        console.log(`🎨 Starting animation '${firstAnimName}' (Index 0) for color group ${colorKey}`)
-
-        activeAnimations.set(colorKey, {
-          animIndex: 0,
-          startTime: Date.now(),
-          duration: ANIMATION_DURATION,
-          originalColor: colorKey,
-        })
-        this.startAnimationLoop(output)
+    // --- 2. Handle Selector Knob presses in Normal Mode ---
+    if (!isAnimationConfigModeActive && SELECTOR_KNOBS.includes(control as any)) {
+      if (control === COLOR_SELECTOR_KNOB_R || control === COLOR_SELECTOR_KNOB_B) {
+        // Pressing Knob 0 or Knob 2 stops animation for the current mixed color
+        console.log(`🎨 Button ${control} pressed. Stopping animation for preview color ${mixedColorValue}.`)
+        this.stopAnimationForColor(output, mixedColorValue)
+        return true // Handled stop
       }
-
-      return true // Handled press event (cycle/start/stop animation)
+      // Ignore press on Knob 1 (strategy selector in config mode)
+      return true
     }
 
-    // --- 4. Button press not handled ---
-    return false
+    // --- 3. Apply Color & Start/Restart Animation (Knobs 4-15) ---
+    // Ignore if in config mode (should have returned true already)
+    if (isAnimationConfigModeActive) return false
+
+    // Proceed only for knobs 4-15
+    if (CONTROL_KNOBS.includes(control as any)) return false
+
+    const colorToApply = mixedColorValue
+    console.log(`🎨 Applying color ${colorToApply} onto Knob ${control}`)
+    this.stopAnimationForKnob(output, control) // Stop previous anim on this knob
+    setLed(output, control, colorToApply)
+    knobColors.set(control, colorToApply)
+
+    // Start/Restart animation for the applied color group using its current config
+    const config = this.getOrCreateColorAnimConfig(colorToApply)
+    const animFunc = animationFunctions[config.easingIndex]
+    const strategyName = COLOR_TRANSITION_STRATEGIES[config.strategyIndex]
+    if (!animFunc) {
+      console.warn("No animations defined!")
+      return true
+    }
+    const animName = animFunc.name || `Index ${config.easingIndex}`
+
+    console.log(` - Starting/Restarting animation '${animName}' (Strategy: ${strategyName}) for color group ${colorToApply}`)
+
+    // No offsets needed for synchronized animation
+    activeAnimations.set(colorToApply, {
+      animIndex: config.easingIndex,
+      strategyIndex: config.strategyIndex,
+      startTime: Date.now(),
+      duration: config.duration,
+      // No knobOffsets property anymore
+    })
+    this.startAnimationLoop(output)
+
+    return true // Handled color apply & animation start/restart
   }
 
   /**
@@ -325,23 +429,5 @@ export class ColorMixerMode implements FidgetModeInterface {
   handleButtonRelease(_output: Output, _control: number): boolean {
     // No action needed specifically on release for color mixer logic itself
     return false // Did not handle this event in a specific way
-  }
-
-  deactivate(output: Output): void {
-    console.log("🎨 Deactivated Color Mixer mode")
-    clearLeds(output, ALL_KNOBS) // Clear all knobs on exit
-    redValue = 0
-    greenValue = 0
-    blueValue = 0
-    isSampling = false
-    knobColors.clear() // Clear the color mapping
-    activeAnimations.clear() // Clear active animations
-    if (animationIntervalId) {
-      clearInterval(animationIntervalId as number)
-      animationIntervalId = null
-    }
-    // Clear any pending flash timers
-    displayKnobFlashTimers.forEach(clearTimeout)
-    displayKnobFlashTimers = []
   }
 }
