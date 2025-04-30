@@ -6,24 +6,53 @@ export const LED_CH = 1 // Indicator LED channel
 export const BUTTON_CHANNEL = 1
 export const KNOB_CHANNEL = 0
 
-export type FidgetModeName = "normal" | "mirror" | "chase" | "rainbow" | "pulse" | "ripple" | "random" | "wave" | "binary" | "fibonacci" | "simon"
+export type FidgetModeName =
+  | "game_select"
+  | "normal_linking" // Keeping the original linking as an option
+  | "mirror"
+  | "chase"
+  | "rainbow"
+  | "pulse"
+  | "ripple"
+  | "random"
+  | "wave"
+  | "binary"
+  | "fibonacci"
+  | "simon"
 
 // Shared utility to set LED (could be moved to a utils file later)
 export function setLed(output: Output, control: number, value: number) {
+  // Basic validation to prevent crashing MIDI libraries with bad values
+  value = Math.max(0, Math.min(127, Math.floor(value)))
+  control = Math.max(0, Math.min(127, Math.floor(control)))
   const msg = [CC | LED_CH, control, value]
   output.sendMessage(msg)
 }
 
+// Shared utility to clear LEDs
+export function clearLeds(output: Output, controls: number[]) {
+  for (const control of controls) {
+    setLed(output, control, 0)
+  }
+}
+
 // Interface for all fidget modes
 export interface FidgetModeInterface {
-  getName(): FidgetModeName
+  // Called when the mode becomes active
+  // Should set up initial state, timers, LEDs
+  activate(output: Output): void
 
-  // Activate the mode on the given controls
-  activate(output: Output, controls: number[]): void
+  // Called when a knob is turned in this mode
+  // Return true if the event was fully handled, false otherwise
+  handleKnobTurn(output: Output, control: number, value: number): boolean
 
-  // Handle an incoming MIDI message. Return true if handled, false otherwise.
-  handleMessage(output: Output, chan: number, control: number, value: number): boolean
+  // Called when a button is pressed (value 127) in this mode
+  handleButtonPress(output: Output, control: number): boolean
 
-  // Deactivate the mode and clean up resources (timers, LEDs)
+  // Called when a button is released (value 0) in this mode
+  handleButtonRelease?(output: Output, control: number): boolean // Optional
+
+  // Called when the mode is deactivated
+  // Should clean up timers, reset LEDs, clear state
   deactivate(output: Output): void
 }

@@ -1,11 +1,11 @@
 import { Output } from "@julusian/midi"
-import { type FidgetModeInterface, type FidgetModeName, setLed, BUTTON_CHANNEL } from "./interface.ts"
+import { type FidgetModeInterface, type FidgetModeName, setLed, clearLeds, BUTTON_CHANNEL } from "./interface.ts"
 
 // State specific to Simon Game
 let simonSequence: number[] = []
 let simonUserPosition = 0
 let simonActive = false
-let simonControls = new Set<number>()
+const simonControls = new Set<number>(Array.from({ length: 16 }, (_, i) => i)) // Always use 16 controls (0-15)
 let displayTimer: NodeJS.Timeout | null = null
 
 export class SimonMode implements FidgetModeInterface {
@@ -13,16 +13,11 @@ export class SimonMode implements FidgetModeInterface {
     return "simon"
   }
 
-  activate(output: Output, controls: number[]): void {
-    console.log(`🎮 Activating Simon game`)
+  activate(output: Output): void {
+    console.log(`🎮 Activating Simon game on all 16 knobs`)
     this.deactivate(output) // Clear previous state
 
-    if (controls.length === 0) {
-      console.error("Simon mode requires at least 1 control.")
-      return
-    }
-
-    simonControls = new Set(controls)
+    // Ensure the fixed set of controls is used
     simonControls.forEach((control) => {
       setLed(output, control, 0)
     })
@@ -35,28 +30,29 @@ export class SimonMode implements FidgetModeInterface {
     this.addStepToSimon(output)
   }
 
-  handleMessage(output: Output, chan: number, control: number, value: number): boolean {
-    if (!simonActive || chan !== BUTTON_CHANNEL || value !== 127 || !simonControls.has(control)) {
-      return false // Only handle button presses on active simon controls
-    }
+  handleKnobTurn(output: Output, control: number, value: number): boolean {
+    return false // Simon doesn't use knob turns
+  }
 
+  handleButtonPress(output: Output, control: number): boolean {
+    if (!simonActive || !simonControls.has(control)) {
+      return false // Only handle button presses on active simon controls (0-15)
+    }
     this.checkSimonPress(output, control)
     return true // Handled button press
   }
 
   deactivate(output: Output): void {
+    console.log("🎮 Deactivated Simon game")
     if (displayTimer) {
       clearTimeout(displayTimer)
       displayTimer = null
     }
-    simonControls.forEach((control) => {
-      setLed(output, control, 0) // Turn off LEDs
-    })
-    simonControls.clear()
+    clearLeds(output, Array.from(simonControls)) // Use Array.from for Set
+    // No need to clear simonControls as it's fixed
     simonSequence = []
     simonUserPosition = 0
     simonActive = false
-    console.log("🎮 Deactivated Simon game")
   }
 
   // --- Mode specific methods ---
@@ -77,20 +73,18 @@ export class SimonMode implements FidgetModeInterface {
     let stepIndex = 0
     const showStep = () => {
       if (!simonActive) return
-      // Turn off all LEDs first
-      simonControls.forEach((control) => setLed(output, control, 0))
+      simonControls.forEach((control) => setLed(output, control, 0)) // Clear all
 
       if (stepIndex < simonSequence.length) {
         const control = simonSequence[stepIndex]
-        setLed(output, control, 127) // Light up current step
+        setLed(output, control, 127)
 
         stepIndex++
         displayTimer = setTimeout(() => {
-          setLed(output, control, 0) // Turn off after delay
-          displayTimer = setTimeout(showStep, 200) // Delay before next step
+          setLed(output, control, 0)
+          displayTimer = setTimeout(showStep, 200)
         }, 500)
       } else {
-        // Sequence finished displaying, ready for user input
         displayTimer = null
       }
     }
@@ -98,41 +92,32 @@ export class SimonMode implements FidgetModeInterface {
   }
 
   private checkSimonPress(output: Output, control: number) {
-    if (!simonActive) return
-
-    // Prevent input while sequence is displaying
-    if (displayTimer) return
+    if (!simonActive || displayTimer) return // Ignore if displaying
 
     if (control === simonSequence[simonUserPosition]) {
-      // Correct press
       setLed(output, control, 127)
       setTimeout(() => setLed(output, control, 0), 150)
-
       simonUserPosition++
-
       if (simonUserPosition >= simonSequence.length) {
-        // Completed sequence
         console.log(`✅ Sequence complete! Score: ${simonSequence.length}`)
-        // Add new step after a short delay
         setTimeout(() => this.addStepToSimon(output), 1000)
       }
     } else {
-      // Wrong button - game over
       console.log(`❌ Simon game over! Score: ${simonSequence.length - 1}`)
       this.gameOverAnimation(output)
-      simonActive = false // Stop the game
+      simonActive = false
     }
   }
 
   private gameOverAnimation(output: Output) {
+    const controlsArray = Array.from(simonControls)
     const flashAll = (times: number) => {
-      if (times <= 0 || !simonControls.size) {
-        simonControls.forEach((c) => setLed(output, c, 0))
+      if (times <= 0 || controlsArray.length === 0) {
+        clearLeds(output, controlsArray)
         return
       }
-
       const onValue = times % 2 === 0 ? 0 : 127
-      simonControls.forEach((c) => setLed(output, c, onValue))
+      controlsArray.forEach((c) => setLed(output, c, onValue))
       setTimeout(() => flashAll(times - 1), 150)
     }
     flashAll(6) // Flash 3 times
