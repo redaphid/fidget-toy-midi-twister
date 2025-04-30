@@ -373,52 +373,98 @@ export class ColorMixerMode implements FidgetModeInterface {
 
     // --- 2. Handle Selector Knob presses in Normal Mode ---
     if (!isAnimationConfigModeActive && SELECTOR_KNOBS.includes(control as any)) {
-      if (control === COLOR_SELECTOR_KNOB_R || control === COLOR_SELECTOR_KNOB_B) {
-        // Pressing Knob 0 or Knob 2 stops animation for the current mixed color
-        console.log(`🎨 Button ${control} pressed. Stopping animation for preview color ${mixedColorValue}.`)
+      if (control === COLOR_SELECTOR_KNOB_R) {
+        // Pressing Knob 0 STOPS animation for the current mixed color
+        console.log(`🎨 Button 0 pressed. Stopping animation for preview color ${mixedColorValue}.`)
         this.stopAnimationForColor(output, mixedColorValue)
         return true // Handled stop
+      } else if (control === COLOR_SELECTOR_KNOB_B) {
+        // Pressing Knob 2 TOGGLES animation for the current mixed color
+        const colorKey = mixedColorValue
+        const currentAnimation = activeAnimations.get(colorKey)
+        if (currentAnimation) {
+          console.log(`🎨 Button 2 pressed. Stopping animation for preview color ${colorKey}.`)
+          this.stopAnimationForColor(output, colorKey)
+        } else {
+          console.log(`🎨 Button 2 pressed. Starting animation for preview color ${colorKey}.`)
+          const config = this.getOrCreateColorAnimConfig(colorKey)
+          const animFunc = animationFunctions[config.easingIndex]
+          const strategyName = COLOR_TRANSITION_STRATEGIES[config.strategyIndex]
+          if (!animFunc) {
+            console.warn("No animations defined!")
+            return true
+          }
+          const animName = animFunc.name || `Index ${config.easingIndex}`
+
+          console.log(` - Starting animation '${animName}' (Strategy: ${strategyName}) for color group ${colorKey}`)
+          activeAnimations.set(colorKey, {
+            animIndex: config.easingIndex,
+            strategyIndex: config.strategyIndex,
+            startTime: Date.now(),
+            duration: config.duration,
+          })
+          this.startAnimationLoop(output)
+        }
+        return true // Handled toggle
+      } else if (control === COLOR_SELECTOR_KNOB_G) {
+        // Ignore press on Knob 1 (strategy selector in config mode)
+        return true
       }
-      // Ignore press on Knob 1 (strategy selector in config mode)
-      return true
     }
 
-    // --- 3. Apply Color & Start/Restart Animation (Knobs 4-15) ---
-    // Ignore if in config mode (should have returned true already)
+    // --- 3. Apply Color or Toggle Animation (Knobs 4-15) ---
+    // Ignore if in config mode
     if (isAnimationConfigModeActive) return false
 
     // Proceed only for knobs 4-15
     if (CONTROL_KNOBS.includes(control as any)) return false
 
     const colorToApply = mixedColorValue
-    console.log(`🎨 Applying color ${colorToApply} onto Knob ${control}`)
-    this.stopAnimationForKnob(output, control) // Stop previous anim on this knob
+    const existingColor = knobColors.get(control)
+    const isAlreadySet = existingColor === colorToApply
+
+    // Always stop previous animation on the specific knob being pressed
+    this.stopAnimationForKnob(output, control)
+
+    // Set the color (even if it's the same color again)
+    console.log(`🎨 Setting color ${colorToApply} onto Knob ${control}`)
     setLed(output, control, colorToApply)
     knobColors.set(control, colorToApply)
 
-    // Start/Restart animation for the applied color group using its current config
-    const config = this.getOrCreateColorAnimConfig(colorToApply)
-    const animFunc = animationFunctions[config.easingIndex]
-    const strategyName = COLOR_TRANSITION_STRATEGIES[config.strategyIndex]
-    if (!animFunc) {
-      console.warn("No animations defined!")
-      return true
+    // If the knob was already set to this color, toggle animation for the group
+    if (isAlreadySet) {
+      const colorKey = colorToApply
+      const currentAnimation = activeAnimations.get(colorKey)
+
+      if (currentAnimation) {
+        // Animation is running -> Stop it
+        console.log(` - Knob already set. Stopping animation for color group ${colorKey}.`)
+        this.stopAnimationForColor(output, colorKey)
+      } else {
+        // Animation is NOT running -> Start it
+        const config = this.getOrCreateColorAnimConfig(colorKey)
+        const animFunc = animationFunctions[config.easingIndex]
+        const strategyName = COLOR_TRANSITION_STRATEGIES[config.strategyIndex]
+        if (!animFunc) {
+          console.warn("No animations defined!")
+          return true
+        }
+        const animName = animFunc.name || `Index ${config.easingIndex}`
+
+        console.log(` - Knob already set. Starting animation '${animName}' (Strategy: ${strategyName}) for color group ${colorKey}`)
+
+        activeAnimations.set(colorKey, {
+          animIndex: config.easingIndex,
+          strategyIndex: config.strategyIndex,
+          startTime: Date.now(),
+          duration: config.duration,
+        })
+        this.startAnimationLoop(output)
+      }
     }
-    const animName = animFunc.name || `Index ${config.easingIndex}`
+    // Else: It was the first time applying this color, so don't start animation yet.
 
-    console.log(` - Starting/Restarting animation '${animName}' (Strategy: ${strategyName}) for color group ${colorToApply}`)
-
-    // No offsets needed for synchronized animation
-    activeAnimations.set(colorToApply, {
-      animIndex: config.easingIndex,
-      strategyIndex: config.strategyIndex,
-      startTime: Date.now(),
-      duration: config.duration,
-      // No knobOffsets property anymore
-    })
-    this.startAnimationLoop(output)
-
-    return true // Handled color apply & animation start/restart
+    return true // Handled color apply or animation toggle
   }
 
   /**
