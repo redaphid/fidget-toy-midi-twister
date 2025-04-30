@@ -5,6 +5,7 @@ import { type FidgetModeInterface, type FidgetModeName, setLed, clearLeds } from
 let fibTimer: NodeJS.Timeout | null = null
 let fibPosition = 0
 let normalizedFib: number[] = []
+let fibSpeed = 300 // ms update interval
 const ALL_KNOBS = Array.from({ length: 16 }, (_, i) => i)
 
 // Pre-calculate normalized Fibonacci sequence
@@ -31,9 +32,14 @@ export class FibonacciMode implements FidgetModeInterface {
     console.log(`🌀 Activating Fibonacci mode on all knobs`)
     this.deactivate(output)
     fibPosition = 0
+    fibSpeed = 300 // Reset speed
 
-    // Ensure sequence is calculated (should be already, but safe)
     if (normalizedFib.length === 0) calculateFibonacci()
+    this.startFibInterval(output)
+  }
+
+  private startFibInterval(output: Output) {
+    if (fibTimer) clearInterval(fibTimer)
 
     fibTimer = setInterval(() => {
       ALL_KNOBS.forEach((control, index) => {
@@ -42,11 +48,19 @@ export class FibonacciMode implements FidgetModeInterface {
       })
 
       fibPosition = (fibPosition + 1) % normalizedFib.length
-    }, 300)
+    }, fibSpeed)
   }
 
   handleKnobTurn(output: Output, control: number, value: number): boolean {
-    return false
+    // Map 0-127 to 50ms-1000ms interval
+    const newSpeed = 50 + ((127 - value) / 127) * 950
+    if (Math.abs(newSpeed - fibSpeed) > 10) {
+      // Tolerance
+      fibSpeed = newSpeed
+      console.log(`🌀 Fibonacci speed set to: ${fibSpeed.toFixed(0)}ms`)
+      this.startFibInterval(output)
+    }
+    return true // Handled
   }
 
   handleButtonPress(output: Output, control: number): boolean {
@@ -61,5 +75,6 @@ export class FibonacciMode implements FidgetModeInterface {
     }
     clearLeds(output, ALL_KNOBS)
     fibPosition = 0
+    fibSpeed = 300
   }
 }

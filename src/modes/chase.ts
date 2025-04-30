@@ -5,6 +5,7 @@ import { type FidgetModeInterface, type FidgetModeName, setLed, clearLeds } from
 let chaseSequence: number[] = []
 let chasePosition = 0
 let chaseTimer: NodeJS.Timeout | null = null
+let chaseSpeed = 150 // Default speed (ms)
 const ALL_KNOBS = Array.from({ length: 16 }, (_, i) => i)
 
 export class ChaseMode implements FidgetModeInterface {
@@ -18,20 +19,35 @@ export class ChaseMode implements FidgetModeInterface {
 
     chaseSequence = [...ALL_KNOBS]
     chasePosition = 0
+    chaseSpeed = 150 // Reset speed
 
     clearLeds(output, ALL_KNOBS)
+    this.startChaseInterval(output)
+  }
 
-    // Start the chase
+  private startChaseInterval(output: Output) {
+    if (chaseTimer) clearInterval(chaseTimer)
+
     chaseTimer = setInterval(() => {
+      if (chaseSequence.length === 0) return // Stop if deactivated
       const prevPos = (chasePosition - 1 + chaseSequence.length) % chaseSequence.length
       setLed(output, chaseSequence[prevPos], 0)
       setLed(output, chaseSequence[chasePosition], 127)
       chasePosition = (chasePosition + 1) % chaseSequence.length
-    }, 150)
+    }, chaseSpeed) // Use dynamic speed
   }
 
   handleKnobTurn(output: Output, control: number, value: number): boolean {
-    return false // Not handled
+    // Map knob value (0-127) to speed (e.g., 50ms to 500ms)
+    // Invert value so higher knob value = faster speed
+    const newSpeed = 50 + ((127 - value) / 127) * 450
+    if (Math.abs(newSpeed - chaseSpeed) > 5) {
+      // Add tolerance to avoid restarting timer too often
+      chaseSpeed = newSpeed
+      console.log(`🏃 Chase speed set to: ${chaseSpeed.toFixed(0)}ms`)
+      this.startChaseInterval(output) // Restart timer with new speed
+    }
+    return true // Handled
   }
 
   handleButtonPress(output: Output, control: number): boolean {

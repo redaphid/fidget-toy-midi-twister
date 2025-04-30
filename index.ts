@@ -136,9 +136,9 @@ function handleMidiMessage(output: Output, message: number[]) {
   }
 
   if (handled) {
-    console.log("Message handled by active mode.")
+    console.log(`Message ${message} handled by active mode.`)
   } else {
-    console.log("Message not handled by active mode.")
+    console.log(`Message ${message} not handled by active mode.`)
   }
 }
 

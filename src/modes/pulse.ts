@@ -4,6 +4,9 @@ import { type FidgetModeInterface, type FidgetModeName, setLed, clearLeds } from
 // State specific to Pulse Mode
 let pulseTimer: NodeJS.Timeout | null = null
 let activeControl: number | null = null
+let pulseSpeed = 50 // Default speed ms
+let currentValue = 0
+let direction = 1
 
 export class PulseMode implements FidgetModeInterface {
   getName(): FidgetModeName {
@@ -16,35 +19,50 @@ export class PulseMode implements FidgetModeInterface {
 
     if (triggeringControl === undefined) {
       console.error("Pulse mode requires a triggering control.")
-      // Default to control 0 if none provided?
-      triggeringControl = 0
-      // return;
+      triggeringControl = 0 // Default
     }
 
     activeControl = triggeringControl
+    pulseSpeed = 50 // Reset speed
+    currentValue = 0
+    direction = 1
     console.log(`💓 Pulsing: control ${activeControl}`)
+    this.startPulseInterval(output)
+  }
 
-    let value = 0
-    let direction = 1
+  private startPulseInterval(output: Output) {
+    if (pulseTimer) clearInterval(pulseTimer)
 
     pulseTimer = setInterval(() => {
       if (activeControl === null) return // Guard
 
-      value += direction * 5
-      if (value >= 127) {
-        value = 127
+      currentValue += direction * 5 // Amount to change each step
+      if (currentValue >= 127) {
+        currentValue = 127
         direction = -1
-      } else if (value <= 0) {
-        value = 0
+      } else if (currentValue <= 0) {
+        currentValue = 0
         direction = 1
       }
 
-      setLed(output, activeControl, value)
-    }, 50)
+      setLed(output, activeControl, currentValue)
+    }, pulseSpeed) // Use dynamic speed
   }
 
   handleKnobTurn(output: Output, control: number, value: number): boolean {
-    return false // Not handled
+    // Only react if the *active* pulsing knob is turned
+    if (control === activeControl) {
+      // Map knob value (0-127) to speed (e.g., 20ms to 200ms)
+      const newSpeed = 20 + ((127 - value) / 127) * 180
+      if (Math.abs(newSpeed - pulseSpeed) > 3) {
+        // Tolerance
+        pulseSpeed = newSpeed
+        console.log(`💓 Pulse speed set to: ${pulseSpeed.toFixed(0)}ms`)
+        this.startPulseInterval(output) // Restart timer with new speed
+      }
+      return true // Handled
+    }
+    return false // Knob turn wasn't the active one
   }
 
   handleButtonPress(output: Output, control: number): boolean {
@@ -66,5 +84,9 @@ export class PulseMode implements FidgetModeInterface {
       setLed(output, activeControl, 0) // Turn off LED
       activeControl = null
     }
+    // Reset state variables
+    pulseSpeed = 50
+    currentValue = 0
+    direction = 1
   }
 }
