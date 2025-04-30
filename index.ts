@@ -137,11 +137,9 @@ function handleMidiMessage(output: Output, message: number[]) {
     }
   }
 
-  if (handled) {
-    console.log(`Message ${message} handled by active mode.`)
-  } else {
-    console.log(`Message ${message} not handled by active mode.`)
-  }
+  // if (!handled) {
+  //   console.debug(`Message ${message} not handled by active mode.`)
+  // }
 }
 
 function trackKnobName(chan: number, control: number, value: number) {
