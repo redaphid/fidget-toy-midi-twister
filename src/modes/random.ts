@@ -4,6 +4,7 @@ import { type FidgetModeInterface, type FidgetModeName, setLed, clearLeds } from
 // State specific to Random Mode
 let randomTimer: NodeJS.Timeout | null = null
 let randomSpeed = 200 // ms update interval
+let isFrozen = false
 const ALL_KNOBS = Array.from({ length: 16 }, (_, i) => i)
 
 // Generate random value helper
@@ -20,6 +21,7 @@ export class RandomMode implements FidgetModeInterface {
     console.log(`🎲 Activating Random mode on all knobs`)
     this.deactivate(output)
     randomSpeed = 200 // Reset speed
+    isFrozen = false
     this.startRandomInterval(output)
   }
 
@@ -27,6 +29,8 @@ export class RandomMode implements FidgetModeInterface {
     if (randomTimer) clearInterval(randomTimer)
 
     randomTimer = setInterval(() => {
+      if (isFrozen) return // Don't update if frozen
+
       ALL_KNOBS.forEach((control) => {
         setLed(output, control, randomValue())
       })
@@ -40,13 +44,22 @@ export class RandomMode implements FidgetModeInterface {
       // Tolerance
       randomSpeed = newSpeed
       console.log(`🎲 Random speed set to: ${randomSpeed.toFixed(0)}ms`)
-      this.startRandomInterval(output)
+      // Only restart if not frozen, otherwise speed applies when unfrozen
+      if (!isFrozen) {
+        this.startRandomInterval(output)
+      }
     }
     return true // Handled
   }
 
   handleButtonPress(output: Output, control: number): boolean {
-    return false
+    isFrozen = !isFrozen
+    console.log(`🎲 Random mode ${isFrozen ? "Frozen" : "Unfrozen"}`)
+    if (!isFrozen) {
+      // Restart timer if unfreezing to apply potential speed changes
+      this.startRandomInterval(output)
+    }
+    return true // Handled
   }
 
   deactivate(output: Output): void {
@@ -57,5 +70,6 @@ export class RandomMode implements FidgetModeInterface {
     }
     clearLeds(output, ALL_KNOBS)
     randomSpeed = 200
+    isFrozen = false
   }
 }

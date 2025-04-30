@@ -14,6 +14,7 @@ import { RandomMode } from "./src/modes/random.ts"
 import { WaveMode } from "./src/modes/wave.ts"
 import { BinaryMode } from "./src/modes/binary.ts"
 import { FibonacciMode } from "./src/modes/fibonacci.ts"
+import { ColorMixerMode } from "./src/modes/color_mixer.ts"
 
 // ===== CONSTANTS =====
 const COMMAND_TIMEOUT = 1000 // ms for command buffer
@@ -82,6 +83,7 @@ function registerModes() {
   modes.wave = new WaveMode()
   modes.binary = new BinaryMode()
   modes.fibonacci = new FibonacciMode()
+  modes.color_mixer = new ColorMixerMode()
   console.log("Modes registered:", Object.keys(modes))
 }
 

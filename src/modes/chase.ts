@@ -6,6 +6,7 @@ let chaseSequence: number[] = []
 let chasePosition = 0
 let chaseTimer: NodeJS.Timeout | null = null
 let chaseSpeed = 150 // Default speed (ms)
+let chaseDirection = 1 // 1 for forward, -1 for backward
 const ALL_KNOBS = Array.from({ length: 16 }, (_, i) => i)
 
 export class ChaseMode implements FidgetModeInterface {
@@ -20,6 +21,7 @@ export class ChaseMode implements FidgetModeInterface {
     chaseSequence = [...ALL_KNOBS]
     chasePosition = 0
     chaseSpeed = 150 // Reset speed
+    chaseDirection = 1 // Default forward
 
     clearLeds(output, ALL_KNOBS)
     this.startChaseInterval(output)
@@ -30,10 +32,18 @@ export class ChaseMode implements FidgetModeInterface {
 
     chaseTimer = setInterval(() => {
       if (chaseSequence.length === 0) return // Stop if deactivated
-      const prevPos = (chasePosition - 1 + chaseSequence.length) % chaseSequence.length
+
+      // Calculate previous position based on direction
+      const prevOffset = chaseDirection === 1 ? -1 : 1
+      const prevPos = (chasePosition + prevOffset + chaseSequence.length) % chaseSequence.length
+
+      // Clear previous LED
       setLed(output, chaseSequence[prevPos], 0)
+      // Set current LED
       setLed(output, chaseSequence[chasePosition], 127)
-      chasePosition = (chasePosition + 1) % chaseSequence.length
+
+      // Move to next position based on direction
+      chasePosition = (chasePosition + chaseDirection + chaseSequence.length) % chaseSequence.length
     }, chaseSpeed) // Use dynamic speed
   }
 
@@ -51,7 +61,10 @@ export class ChaseMode implements FidgetModeInterface {
   }
 
   handleButtonPress(output: Output, control: number): boolean {
-    return false // Not handled
+    chaseDirection *= -1 // Reverse direction
+    console.log(`🏃 Chase direction reversed (${chaseDirection === 1 ? "Forward" : "Backward"})`)
+    // No need to restart timer, direction is used in the next interval
+    return true // Handled button press
   }
 
   deactivate(output: Output): void {
@@ -63,5 +76,6 @@ export class ChaseMode implements FidgetModeInterface {
     clearLeds(output, ALL_KNOBS)
     chaseSequence = []
     chasePosition = 0
+    chaseDirection = 1 // Reset direction
   }
 }

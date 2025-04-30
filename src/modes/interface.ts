@@ -19,6 +19,7 @@ export type FidgetModeName =
   | "binary"
   | "fibonacci"
   | "simon"
+  | "color_mixer"
 
 // Shared utility to set LED (could be moved to a utils file later)
 export function setLed(output: Output, control: number, value: number) {

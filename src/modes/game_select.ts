@@ -14,8 +14,9 @@ const GAME_MAP: { [control: number]: FidgetModeName } = {
   7: "binary",
   8: "fibonacci",
   9: "random",
+  10: "color_mixer", // Add Color Mixer
   15: "normal_linking", // Put linking on the last knob
-  // Knobs 10-14 are unassigned
+  // Knobs 11-14 are unassigned
 }
 
 // Assign unique colors (MIDI 0-127) to game knobs
@@ -30,11 +31,30 @@ const GAME_COLORS: { [mode in FidgetModeName]?: number } = {
   binary: 90, // Pink
   fibonacci: 30, // Lime
   random: 0, // White (or close to it)
+  color_mixer: 48, // Assign a color (e.g., Teal)
   normal_linking: 127, // Bright White / Default
 }
 
+// --- Helper Functions ---
+function midiValueToColorName(value: number): string {
+  // Simple range-based mapping (adjust ranges as needed)
+  if (value < 2) return "White"
+  if (value < 8) return "Red"
+  if (value < 16) return "Orange"
+  if (value < 24) return "Amber"
+  if (value < 32) return "Yellow"
+  if (value < 40) return "Lime"
+  if (value < 48) return "Green"
+  if (value < 64) return "Cyan"
+  if (value < 80) return "Blue"
+  if (value < 96) return "Purple"
+  if (value < 112) return "Magenta"
+  if (value < 120) return "Pink"
+  return "Bright White"
+}
+
 // Type for the callback function to change the mode
-export type ChangeModeCallback = (modeName: FidgetModeName) => void
+export type ChangeModeCallback = (modeName: FidgetModeName, triggeringControl: number) => void
 
 // --- Game Selection Mode ---
 export class GameSelectionMode implements FidgetModeInterface {
@@ -59,9 +79,12 @@ export class GameSelectionMode implements FidgetModeInterface {
     // Set colors for assigned game knobs and print mapping
     this.assignedKnobs.forEach((control) => {
       const modeName = GAME_MAP[control]
-      const color = GAME_COLORS[modeName] ?? 0 // Default to white if no color
-      setLed(output, control, color)
-      console.log(`  Knob ${control}: ${modeName} (Color: ${color})`)
+      const colorValue = GAME_COLORS[modeName] ?? 0 // Default to white if no color
+      const colorName = midiValueToColorName(colorValue)
+      setLed(output, control, colorValue)
+      // Pad control number for alignment
+      const controlStr = String(control).padStart(2, " ")
+      console.log(`  Knob ${controlStr}: ${modeName.padEnd(15)} (Color: ${colorName})`)
     })
     console.log("-------------------------------------")
   }
@@ -75,7 +98,8 @@ export class GameSelectionMode implements FidgetModeInterface {
     if (GAME_MAP[control]) {
       const selectedMode = GAME_MAP[control]
       console.log(`Selected game: ${selectedMode}`)
-      this.changeModeCallback(selectedMode)
+      // Pass the control that was pressed
+      this.changeModeCallback(selectedMode, control)
       return true // Handled the press
     }
     return false // Button press wasn't for a game knob
