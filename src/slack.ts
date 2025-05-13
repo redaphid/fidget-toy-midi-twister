@@ -29,9 +29,17 @@ export const setProfilePhoto = async ({ output, knob, token }: { output: Output;
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
     })
+
     if (!res.ok) {
       setLed(output, knob, Colors.PINK)
       console.error(`Failed to set profile photo: ${res.statusText}`)
+      return
+    }
+    const body = await res.json()
+    console.log(`body: ${JSON.stringify(body)}`)
+    if (!body.ok) {
+      setLed(output, knob, Colors.ORANGE)
+      console.error(`Failed to set profile photo: ${body.error}`)
       return
     }
   } catch (error: any) {
