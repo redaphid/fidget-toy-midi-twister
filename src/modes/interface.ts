@@ -17,6 +17,16 @@ export const Colors = {
   WHITE: 127,
   ORANGE: 108,
   PINK: 120,
+  MAGENTA: 116,
+  LIME: 80,
+  TEAL: 56,
+  INDIGO: 104,
+  MAROON: 124,
+  OLIVE: 88,
+  NAVY: 40,
+  CORAL: 100,
+  TURQUOISE: 52,
+  VIOLET: 108,
 } as const
 
 export type FidgetModeName =

@@ -1,17 +1,17 @@
 import { Output } from "@julusian/midi"
-import { type FidgetModeInterface, type FidgetModeName, setLed, clearLeds } from "./interface.ts"
+import { type FidgetModeInterface, type FidgetModeName, setLed, clearLeds, Colors } from "./interface.ts"
 
 // --- Configuration ---
 // Assign knobs (control numbers) to modes
 const GAME_MAP: { [control: number]: FidgetModeName } = {
-  0: "simon",
+  0: "slack",
   1: "chase",
   2: "mirror",
   3: "rainbow",
   4: "pulse",
   5: "ripple",
   6: "wave",
-  7: "binary",
+  7: "simon",
   8: "fibonacci",
   9: "random",
   10: "color_mixer", // Add Color Mixer
@@ -21,18 +21,18 @@ const GAME_MAP: { [control: number]: FidgetModeName } = {
 
 // Assign unique colors (MIDI 0-127) to game knobs
 const GAME_COLORS: { [mode in FidgetModeName]?: number } = {
-  simon: 4, // Red
-  chase: 20, // Yellow
-  mirror: 36, // Green
-  rainbow: 60, // Cyan
-  pulse: 70, // Blue
-  ripple: 85, // Magenta
-  wave: 10, // Orange
-  binary: 90, // Pink
-  fibonacci: 30, // Lime
-  random: 0, // White (or close to it)
-  color_mixer: 48, // Assign a color (e.g., Teal)
-  normal_linking: 127, // Bright White / Default
+  simon: Colors.RED, // Red
+  chase: Colors.YELLOW, // Yellow
+  mirror: Colors.GREEN, // Green
+  rainbow: Colors.CYAN, // Cyan
+  pulse: Colors.BLUE, // Blue
+  ripple: Colors.MAGENTA, // Magenta
+  wave: Colors.ORANGE, // Orange
+  binary: Colors.PINK, // Pink
+  fibonacci: Colors.LIME, // Lime
+  random: Colors.WHITE, // White (or close to it)
+  color_mixer: Colors.TEAL, // Assign a color (e.g., Teal)
+  normal_linking: Colors.CORAL, // Bright White / Default
 }
 
 // --- Helper Functions ---

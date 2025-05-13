@@ -13,7 +13,6 @@ import { PulseMode } from "./src/modes/pulse.ts"
 import { RippleMode } from "./src/modes/ripple.ts"
 import { RandomMode } from "./src/modes/random.ts"
 import { WaveMode } from "./src/modes/wave.ts"
-import { BinaryMode } from "./src/modes/binary.ts"
 import { FibonacciMode } from "./src/modes/fibonacci.ts"
 import { ColorMixerMode } from "./src/modes/color_mixer.ts"
 
@@ -21,6 +20,7 @@ import { ColorMixerMode } from "./src/modes/color_mixer.ts"
 import { setProfilePhoto } from "./src/slack.ts"
 import { strict as assert } from "node:assert"
 import { parseArgs } from "node:util" // Import parseArgs
+import { SlackMode } from "./src/modes/slack.ts"
 
 // ===== CONSTANTS =====
 const COMMAND_TIMEOUT = 1000 // ms for command buffer
@@ -87,7 +87,7 @@ function registerModes() {
   modes.ripple = new RippleMode()
   modes.random = new RandomMode()
   modes.wave = new WaveMode()
-  modes.binary = new BinaryMode()
+  modes.slack = new SlackMode()
   modes.fibonacci = new FibonacciMode()
   modes.color_mixer = new ColorMixerMode()
   console.log("Modes registered:", Object.keys(modes))
