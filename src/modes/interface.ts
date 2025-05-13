@@ -6,6 +6,19 @@ export const LED_CH = 1 // Indicator LED channel
 export const BUTTON_CHANNEL = 1
 export const KNOB_CHANNEL = 0
 
+export const Colors = {
+  OFF: 0,
+  RED: 127,
+  GREEN: 64,
+  BLUE: 32,
+  YELLOW: 96,
+  PURPLE: 112,
+  CYAN: 48,
+  WHITE: 127,
+  ORANGE: 108,
+  PINK: 120,
+} as const
+
 export type FidgetModeName =
   | "game_select"
   | "normal_linking" // Keeping the original linking as an option
@@ -20,7 +33,7 @@ export type FidgetModeName =
   | "fibonacci"
   | "simon"
   | "color_mixer"
-
+  | "slack"
 // Shared utility to set LED (could be moved to a utils file later)
 export function setLed(output: Output, control: number, value: number) {
   // Basic validation to prevent crashing MIDI libraries with bad values

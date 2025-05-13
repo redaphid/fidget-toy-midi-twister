@@ -13,6 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "@julusian/midi": "^3.6.1",
+    "debug": "^4.4.0",
     "midi": "^2.0.0"
   },
   "devDependencies": {

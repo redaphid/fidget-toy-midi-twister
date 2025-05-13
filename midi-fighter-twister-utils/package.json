@@ -1,0 +1,39 @@
+{
+  "name": "@your-npm-username/midi-fighter-twister-utils",
+  "version": "0.1.0",
+  "description": "Utility functions for interacting with MIDI Fighter Twister LEDs.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-npm-username/midi-fighter-twister-utils.git"
+  },
+  "keywords": [
+    "midi",
+    "midi fighter twister",
+    "controller",
+    "led",
+    "utils"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/your-npm-username/midi-fighter-twister-utils/issues"
+  },
+  "homepage": "https://github.com/your-npm-username/midi-fighter-twister-utils#readme",
+  "dependencies": {
+    "@julusian/midi": "^5.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { Input, Output } from "@julusian/midi"
 import { type FidgetModeInterface, type FidgetModeName, BUTTON_CHANNEL, KNOB_CHANNEL } from "./src/modes/interface.ts"
 
@@ -15,6 +16,11 @@ import { WaveMode } from "./src/modes/wave.ts"
 import { BinaryMode } from "./src/modes/binary.ts"
 import { FibonacciMode } from "./src/modes/fibonacci.ts"
 import { ColorMixerMode } from "./src/modes/color_mixer.ts"
+
+// Import Slack function and fs
+import { setProfilePhoto } from "./src/slack.ts"
+import { strict as assert } from "node:assert"
+import { parseArgs } from "node:util" // Import parseArgs
 
 // ===== CONSTANTS =====
 const COMMAND_TIMEOUT = 1000 // ms for command buffer
@@ -170,7 +176,40 @@ function cancelLongPressCheck() {
 }
 
 // ===== MAIN APPLICATION =====
-function main() {
+async function main() {
+  // --- Argument Parsing for Slack Photo using util.parseArgs ---
+  const args = process.argv.slice(2)
+  const parsedArgs = parseArgs({
+    args,
+    options: {
+      "set-photo-index": {
+        type: "string",
+        short: "p",
+      },
+      // Add other potential arguments here
+    },
+    allowPositionals: true, // Allow other args if needed
+  })
+
+  const photoIndexStr = parsedArgs.values["set-photo-index"]
+
+  if (photoIndexStr) {
+    const imageIndex = parseInt(photoIndexStr, 10)
+
+    console.log(`Attempting to set Slack profile photo using image index: ${imageIndex}`)
+
+    const { output } = setupMidi() // Need MIDI output for LED feedback
+    const token = process.env.SLACK_TOKEN
+    assert(token, "SLACK_TOKEN environment variable is not set.")
+
+    await setProfilePhoto({ output, knob: imageIndex, token })
+
+    output.closePort()
+    process.exit(0)
+  }
+
+  // --- Normal Fidget Toy Operation ---
+  console.log("Starting Fidget Toy Knobs application...")
   const { input, output } = setupMidi()
   registerModes()
 
@@ -208,4 +247,7 @@ function printHelp() {
   console.log("---------------------------------------")
 }
 
-main()
+main().catch((err) => {
+  console.error("Unhandled error in main:", err)
+  process.exit(1)
+})
